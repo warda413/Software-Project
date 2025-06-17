@@ -1,0 +1,480 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, simpledialog
+from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+import re
+from collections import Counter
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+class BioLiteStudio:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("BioLite Studio - DNA/RNA Analysis Tool")
+        self.root.geometry("1200x800")
+        
+        # Color scheme
+        self.bg_color = "#f0f4f8"
+        self.topbar_color = "#003366"  # Navy blue
+        self.sidebar_color = "#002244"  # Darker navy blue
+        self.sidebar_text_color = "white"
+        self.navy_blue = "#003366"
+        self.light_blue = "#4a90e2"
+        self.grey = "#e0e0e0"
+        self.dark_grey = "#333333"
+        
+        # Font scheme - Increased sidebar font sizes
+        self.header_font = ('Times New Roman', 16, 'bold')
+        self.topbar_font = ('Times New Roman', 18, 'bold')
+        self.sidebar_font = ('Times New Roman', 12)  # Increased from 11
+        self.sidebar_heading_font = ('Times New Roman', 14, 'bold')  # Increased from 12
+        self.button_font = ('Times New Roman', 11)
+        self.text_font = ('Consolas', 10)
+        
+        # Configure style
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        self.configure_styles()
+        
+        self.root.configure(bg=self.bg_color)
+        
+        # Data storage
+        self.sequences = []
+        self.mutated_sequences = {}
+        self.translated_proteins = {}
+        self.canvas_widgets = []
+
+        self.create_widgets()
+
+    def configure_styles(self):
+        """Configure all widget styles"""
+        self.style.configure('TFrame', background=self.bg_color)
+        self.style.configure('TButton', 
+                           font=self.button_font, 
+                           foreground='white', 
+                           background=self.navy_blue,
+                           borderwidth=1)
+        self.style.map('TButton',
+                      background=[('active', self.light_blue)],
+                      foreground=[('active', 'white')])
+        self.style.configure('TLabel', 
+                           background=self.bg_color, 
+                           font=self.button_font)
+        self.style.configure('Header.TLabel', 
+                           font=self.header_font,
+                           foreground=self.navy_blue, 
+                           background=self.bg_color)
+        self.style.configure('Status.TLabel', 
+                           font=('Times New Roman', 10),
+                           foreground='white', 
+                           background=self.dark_grey)
+        self.style.configure('Sidebar.TFrame', background=self.sidebar_color)
+        self.style.configure('Sidebar.TLabel', 
+                           background=self.sidebar_color,
+                           foreground=self.sidebar_text_color,
+                           font=self.sidebar_font)
+        self.style.configure('Topbar.TFrame', background=self.topbar_color)
+        self.style.configure('Topbar.TLabel', 
+                           background=self.topbar_color,
+                           foreground='white',
+                           font=self.topbar_font)
+
+    def create_widgets(self):
+        """Create and arrange all GUI widgets"""
+        # Top Bar with title
+        top_bar = ttk.Frame(self.root, height=50, style='Topbar.TFrame')
+        top_bar.pack(fill=tk.X)
+        top_bar.pack_propagate(False)
+        
+        title_label = ttk.Label(top_bar, 
+                              text="BioLite Studio - DNA Analysis Tool", 
+                              style='Topbar.TLabel')
+        title_label.pack(pady=10)
+        
+        # Toolbar with buttons (centered)
+        toolbar_frame = ttk.Frame(self.root, padding=(10, 5))
+        toolbar_frame.pack(fill=tk.X)
+        
+        # Create a container frame to center the buttons
+        button_container = ttk.Frame(toolbar_frame)
+        button_container.pack(expand=True)
+        
+        # Create buttons in the toolbar
+        button_texts = [
+            ("Upload FASTA", self.upload_fasta),
+            ("Analyze Sequence", self.analyze_sequence),
+            ("Simulate Mutation", self.simulate_mutation),
+            ("Translate to Protein", self.translate_sequence),
+            ("Save Mutated FASTA", self.save_mutated_fasta),
+            ("Export Protein", self.export_protein_sequence)
+        ]
+        
+        for text, command in button_texts:
+            btn = ttk.Button(button_container, 
+                           text=text, 
+                           command=command,
+                           style='TButton')
+            btn.pack(side=tk.LEFT, padx=5, ipadx=5, ipady=3)
+        
+        # Main container for sidebar and content
+        main_container = ttk.Frame(self.root)
+        main_container.pack(fill=tk.BOTH, expand=True)
+        
+        # Sidebar Frame (now just for description/features)
+        sidebar_frame = ttk.Frame(main_container, width=250, style='Sidebar.TFrame')
+        sidebar_frame.pack(side=tk.LEFT, fill=tk.Y)
+        sidebar_frame.pack_propagate(False)
+        
+        # Sidebar Description with larger font
+        desc_frame = ttk.Frame(sidebar_frame, style='Sidebar.TFrame')
+        desc_frame.pack(fill=tk.X, padx=10, pady=(20, 0))
+        
+        desc_heading = ttk.Label(desc_frame, 
+                               text="Description", 
+                               style='Sidebar.TLabel',
+                               font=self.sidebar_heading_font)
+        desc_heading.pack(anchor=tk.W)
+        
+        desc_text = """BioLite Studio, a Python-based graphical tool for analyzing DNA sequences. The tool integrates GC content analysis, FASTA file visualization, sequence statistics, and mutation simulation into a single, user-friendly interface tailored for students and researchers in bioinformatics."""
+        desc_label = ttk.Label(desc_frame, 
+                             text=desc_text,
+                             style='Sidebar.TLabel',
+                             wraplength=230,
+                             justify=tk.LEFT,
+                             font=self.sidebar_font)
+        desc_label.pack(anchor=tk.W, pady=(0, 20))
+        
+        # Features Heading with larger font
+        features_heading = ttk.Label(sidebar_frame, 
+                                   text="Features", 
+                                   style='Sidebar.TLabel',
+                                   font=self.sidebar_heading_font)
+        features_heading.pack(anchor=tk.W, padx=10, pady=(10, 5))
+        
+        # Features List with larger font
+        features = [
+            "• Upload FASTA files for analysis",
+            "• Detailed Sequence analysis and statistics",
+            "• Simulates mutations and see their effects",
+            "• Translate DNA into Protein Sequence",
+            "• Interactive Visualization",
+            "• Save results in multiple formats"
+        ]
+        
+        for feature in features:
+            feature_label = ttk.Label(sidebar_frame, 
+                                   text=feature,
+                                   style='Sidebar.TLabel',
+                                   anchor=tk.W,
+                                   font=self.sidebar_font)
+            feature_label.pack(fill=tk.X, padx=20, pady=2)
+        
+        # Content Frame
+        content_frame = ttk.Frame(main_container)
+        content_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # Main Content Area
+        main_frame = ttk.Frame(content_frame)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 10))
+        
+        # Output Text with Scrollbars
+        text_frame = ttk.Frame(main_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+        
+        y_scroll = ttk.Scrollbar(text_frame)
+        y_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        x_scroll = ttk.Scrollbar(text_frame, orient=tk.HORIZONTAL)
+        x_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        self.output_text = tk.Text(text_frame, 
+                                 wrap=tk.NONE, 
+                                 font=self.text_font, 
+                                 yscrollcommand=y_scroll.set,
+                                 xscrollcommand=x_scroll.set,
+                                 bg='white',
+                                 padx=5, pady=5)
+        self.output_text.pack(fill=tk.BOTH, expand=True)
+        
+        y_scroll.config(command=self.output_text.yview)
+        x_scroll.config(command=self.output_text.xview)
+        
+        # Configure text tags for highlighting
+        self.output_text.tag_config("header", font=('Times New Roman', 12, 'bold'))
+        self.output_text.tag_config("warning", foreground="orange")
+        self.output_text.tag_config("error", foreground="red")
+        self.output_text.tag_config("success", foreground="green")
+        
+        # Status Bar
+        self.status_bar = ttk.Label(content_frame, 
+                                  text="Ready", 
+                                  style='Status.TLabel',
+                                  padding=5,
+                                  anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+    def update_status(self, message):
+        """Update the status bar message"""
+        self.status_bar.config(text=message)
+        self.root.update_idletasks()
+
+    def clear_previous_plots(self):
+        """Remove any existing matplotlib plots"""
+        for widget in self.canvas_widgets:
+            widget.destroy()
+        self.canvas_widgets.clear()
+
+    def upload_fasta(self):
+        """Handle FASTA file upload"""
+        file_path = filedialog.askopenfilename(
+            title="Select FASTA File", 
+            filetypes=[("FASTA files", "*.fasta *.fa *.fna *.txt")]
+        )
+        if not file_path:
+            return
+
+        try:
+            self.sequences = list(SeqIO.parse(file_path, "fasta"))
+            self.mutated_sequences = {}
+            self.translated_proteins = {}
+            self.output_text.delete(1.0, tk.END)
+            self.clear_previous_plots()
+
+            for i, record in enumerate(self.sequences):
+                seq = str(record.seq).upper()
+                base_counts = Counter(seq)
+                
+                self.output_text.insert(tk.END, f"Sequence {i+1}\n", "header")
+                self.output_text.insert(tk.END, f"ID         : {record.id}\n")
+                self.output_text.insert(tk.END, f"Description: {record.description}\n")
+                self.output_text.insert(tk.END, f"Length     : {len(seq)}\n")
+                self.output_text.insert(tk.END, f"Base Counts: A={base_counts.get('A',0)} "
+                                            f"T={base_counts.get('T',0)} "
+                                            f"G={base_counts.get('G',0)} "
+                                            f"C={base_counts.get('C',0)}\n")
+                self.output_text.insert(tk.END, "-"*50 + "\n")
+
+                for j in range(0, len(seq), 70):
+                    self.output_text.insert(tk.END, seq[j:j+70] + "\n")
+                self.output_text.insert(tk.END, "\n")
+
+            self.update_status(f"Loaded {len(self.sequences)} sequences from {file_path}")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load FASTA: {str(e)}")
+            self.update_status("Error loading FASTA file")
+            self.output_text.insert(tk.END, f"Error: {str(e)}\n", "error")
+
+    def analyze_sequence(self):
+        """Perform sequence analysis"""
+        if not self.sequences:
+            messagebox.showwarning("Warning", "Please upload a FASTA file first.")
+            self.update_status("No sequences to analyze")
+            return
+
+        window_size = 100
+        self.output_text.delete(1.0, tk.END)
+        self.clear_previous_plots()
+
+        for idx, record in enumerate(self.sequences):
+            seq = str(record.seq).upper()
+            length = len(seq)
+            gc_total = (seq.count('G') + seq.count('C')) / length * 100
+            base_counts = Counter(seq)
+
+            self.output_text.insert(tk.END, f"Sequence {idx+1} - {record.id}\n", "header")
+            self.output_text.insert(tk.END, f"GC Content (Total): {gc_total:.2f}%\n")
+
+            for i in range(0, length, window_size):
+                line_seq = seq[i:i+window_size]
+                if len(line_seq) > 0:
+                    gc = (line_seq.count('G') + line_seq.count('C')) / len(line_seq) * 100
+                    self.output_text.insert(tk.END, f"  Line {i}-{i+len(line_seq)}: GC={gc:.2f}%\n")
+
+            self.output_text.insert(tk.END, "-"*60 + "\n")
+
+            # Create pie chart
+            fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
+            labels = ['A', 'T', 'G', 'C']
+            values = [base_counts.get(base, 0) for base in labels]
+            colors = ['#4e79a7', '#f28e2b', '#59a14f', '#e15759']
+            ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=90,
+                  colors=colors, wedgeprops=dict(width=0.3))
+            ax.set_title(f'Nucleotide Composition - {record.id}', fontsize=10)
+            plt.tight_layout()
+
+            # Embed plot in Tkinter
+            canvas = FigureCanvasTkAgg(fig, master=self.root)
+            widget = canvas.get_tk_widget()
+            widget.pack(pady=5, fill=tk.BOTH, expand=True)
+            self.canvas_widgets.append(widget)
+            canvas.draw()
+
+        self.update_status(f"Analysis completed for {len(self.sequences)} sequences")
+
+    def simulate_mutation(self):
+        """Simulate sequence mutation"""
+        if not self.sequences:
+            messagebox.showwarning("Warning", "Upload a FASTA file first.")
+            self.update_status("No sequences to mutate")
+            return
+
+        mutation = simpledialog.askstring("Mutation Input", 
+                                        "Enter mutation (e.g., A279T):",
+                                        parent=self.root)
+        if not mutation:
+            return
+
+        match = re.match(r"([ATGC])(\d+)([ATGC])", mutation.upper())
+        if not match:
+            messagebox.showerror("Invalid Format", "Please enter mutation in format A279T.")
+            self.update_status("Invalid mutation format")
+            return
+
+        original_base, pos, new_base = match.groups()
+        pos = int(pos)
+
+        for record in self.sequences:
+            seq = str(record.seq).upper()
+            if pos < 1 or pos > len(seq):
+                messagebox.showerror("Position Error", 
+                                   f"Position {pos} out of range for sequence {record.id}")
+                continue
+
+            if seq[pos - 1] != original_base:
+                messagebox.showwarning("Base Mismatch",
+                                     f"Expected {original_base} at position {pos} in sequence {record.id}, found {seq[pos - 1]}")
+                continue
+
+            mutated_seq = seq[:pos - 1] + new_base + seq[pos:]
+            self.mutated_sequences[record.id] = mutated_seq
+            self.output_text.insert(tk.END, 
+                                 f"Applied mutation {original_base}{pos}{new_base} to {record.id}\n",
+                                 "success")
+
+        self.update_status(f"Mutation {original_base}{pos}{new_base} applied to sequences")
+
+    def translate_sequence(self):
+        """Translate DNA to protein sequence"""
+        if not self.sequences:
+            messagebox.showwarning("Warning", "Please upload a FASTA file first.")
+            self.update_status("No sequences to translate")
+            return
+
+        self.output_text.delete(1.0, tk.END)
+        self.clear_previous_plots()
+        self.translated_proteins.clear()
+
+        def pad_or_trim(seq):
+            remainder = len(seq) % 3
+            if remainder != 0:
+                seq += 'N' * (3 - remainder)
+            return seq
+
+        for record in self.sequences:
+            original_seq = str(record.seq).upper()
+            mutated_seq = self.mutated_sequences.get(record.id, original_seq)
+
+            padded_original = pad_or_trim(original_seq)
+            padded_mutated = pad_or_trim(mutated_seq)
+
+            original_protein = str(Seq(padded_original).translate())
+            mutated_protein = str(Seq(padded_mutated).translate())
+
+            self.translated_proteins[record.id] = mutated_protein
+
+            self.output_text.insert(tk.END, f"Sequence ID: {record.id}\n", "header")
+
+            diffs = [(i, o, m) for i, (o, m) in enumerate(zip(original_protein, mutated_protein)) if o != m]
+            highlight_pos = diffs[0][0] if diffs else None
+
+            self.output_text.insert(tk.END, "Original Protein:\n", "header")
+            for i, aa in enumerate(original_protein[:100]):
+                tag = f"orig_{i}"
+                self.output_text.insert(tk.END, aa, tag)
+                if i == highlight_pos:
+                    self.output_text.tag_config(tag, foreground="red")
+
+            self.output_text.insert(tk.END, "\nMutated Protein:\n", "header")
+            for i, aa in enumerate(mutated_protein[:100]):
+                tag = f"mut_{i}"
+                self.output_text.insert(tk.END, aa, tag)
+                if i == highlight_pos:
+                    self.output_text.tag_config(tag, foreground="blue")
+
+            self.output_text.insert(tk.END, "\n\n")
+
+            if diffs:
+                self.output_text.insert(tk.END, f"Differences:\n", "header")
+                for pos, o, m in diffs:
+                    self.output_text.insert(tk.END, f"  Position {pos+1}: {o} → {m}\n")
+            else:
+                self.output_text.insert(tk.END, "No differences in translated protein.\n", "success")
+
+            self.output_text.insert(tk.END, "-"*60 + "\n\n")
+
+        self.update_status(f"Translation completed for {len(self.sequences)} sequences")
+
+    def save_mutated_fasta(self):
+        """Save mutated sequences to FASTA file"""
+        if not self.mutated_sequences:
+            messagebox.showwarning("Warning", "No mutated sequences available to save.")
+            self.update_status("No mutated sequences to save")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".fasta",
+            filetypes=[("FASTA files", "*.fasta *.fa *.fna")],
+            title="Save Mutated FASTA"
+        )
+        if not file_path:
+            return
+
+        records = []
+        for record in self.sequences:
+            original = str(record.seq).upper()
+            mutated = self.mutated_sequences.get(record.id, original)
+            rec = SeqRecord(Seq(mutated), id=record.id + "_mutated", description="mutated sequence")
+            records.append(rec)
+
+        try:
+            SeqIO.write(records, file_path, "fasta")
+            messagebox.showinfo("Saved", f"Mutated sequences saved to:\n{file_path}")
+            self.update_status(f"Mutated sequences saved to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save: {str(e)}")
+            self.update_status("Error saving mutated sequences")
+
+    def export_protein_sequence(self):
+        """Export translated protein sequences"""
+        if not self.translated_proteins:
+            messagebox.showwarning("Warning", "No translated protein sequences available.")
+            self.update_status("No protein sequences to export")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("FASTA files", "*.fasta")],
+            title="Export Protein Sequences"
+        )
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'w') as f:
+                for id, protein in self.translated_proteins.items():
+                    f.write(f">{id}_protein\n")
+                    for i in range(0, len(protein), 70):
+                        f.write(protein[i:i+70] + "\n")
+
+            messagebox.showinfo("Exported", f"Protein sequences exported to:\n{file_path}")
+            self.update_status(f"Protein sequences exported to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export: {str(e)}")
+            self.update_status("Error exporting protein sequences")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = BioLiteStudio(root)
+    root.mainloop()
